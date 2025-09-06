@@ -6,6 +6,10 @@ const fs = require('fs')
 const path = require('path')
 require('dotenv').config()
 const { OpenAI } = require('openai')
+const fs = require('fs')
+
+// Ensure ./logs exists at runtime (works locally + Railway)
+fs.mkdirSync(path.join(__dirname, '../logs'), { recursive: true })
 
 // Initialize OpenAI
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -105,6 +109,46 @@ router.post('/chat', async (req, res) => {
     console.error('API /api/chat error:', err)
     res.status(500).json({ error: 'server error' })
   }
+})
+
+/* ============ Messages Helper ============ */
+
+// Helper to read the JSONL log (newest first), optionally filter by player
+function readJsonl({ limit = 20, player } = {}) {
+  if (!fs.existsSync(LOG_FILE)) return []
+  const lines = fs.readFileSync(LOG_FILE, 'utf8').trim().split('\n').filter(Boolean)
+  const out = []
+  for (let i = lines.length - 1; i >= 0 && out.length < Math.min(limit, 100); i--) {
+    try {
+      const row = JSON.parse(lines[i])
+      if (player && row.playerId && row.playerId !== player) continue
+      out.push(row)
+    } catch (_) {}
+  }
+  return out // newest-first
+}
+
+// GET /api/recent?limit=20&player=Visitor  --> for the DCL scene
+router.get('/recent', (req, res) => {
+  const limit = parseInt(req.query.limit || '20', 10)
+  const player = (req.query.player || '').trim() || undefined
+  const rows = readJsonl({ limit, player })
+  // Return oldest->newest for easier UI rendering
+  res.json(rows.slice().reverse())
+})
+
+// GET /api/logs  (admin-only download for your archive/training)
+router.get('/logs', (req, res) => {
+  const adminKey = req.headers['x-admin-key']
+  if (!process.env.ADMIN_KEY || adminKey !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: 'unauthorized' })
+  }
+  if (!fs.existsSync(LOG_FILE)) {
+    return res.status(404).json({ error: 'no log yet' })
+  }
+  res.setHeader('Content-Type', 'application/x-ndjson')
+  res.setHeader('Content-Disposition', 'attachment; filename="messages.jsonl"')
+  fs.createReadStream(LOG_FILE).pipe(res)
 })
 
 module.exports = router
