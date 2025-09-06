@@ -6,7 +6,7 @@ const fs = require('fs')
 const path = require('path')
 require('dotenv').config()
 const { OpenAI } = require('openai')
-const fs = require('fs')
+
 
 // Ensure ./logs exists at runtime (works locally + Railway)
 fs.mkdirSync(path.join(__dirname, '../logs'), { recursive: true })
